@@ -1,27 +1,32 @@
-from __future__ import annotations
+"""
+Main risk scoring coordination engine.
+"""
 
-import re
-
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-
+import logging
+from statistics import fmean
 from models import CandidateProfile, InterviewResponse, RiskAssessment
-
-MAX_INPUT_LENGTH = 3000
-_GENERIC_PATTERNS = (
-    r"\bas\s+an\s+ai\b",
-    r"\blanguage\s+model\b",
-    r"\bopenai\b",
-    r"\bchatgpt\b",
-    r"\bmy\s+knowledge\s+cutoff\b",
-    r"\bgenerated\s+by\s+ai\b",
-    r"\bi\s+cannot\s+provide\b",
+from . import config
+from .nlp_match import (
+    clean_text,
+    get_text_similarity,
+    get_skill_similarities,
+    get_skill_coverage
 )
-_CRITICAL_FLAGS = {"multiple_voices", "lip_sync_error", "audio_unsynced"}
-_WARNING_FLAGS = {"unnatural_blink", "background_swapped", "head_movement_unnatural"}
+from .rules import (
+    has_generic_ai_phrase,
+    get_word_count,
+    evaluate_behavioral_flags
+)
 
+# Configure basic logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+MAX_INPUT_LENGTH = config.MAX_INPUT_LENGTH
 
 def _low_confidence(candidate_id: str, message: str) -> RiskAssessment:
+    """Return a default low-confidence result when validation fails."""
+    logger.error(f"Low confidence assessment for {candidate_id}: {message}")
     return RiskAssessment(
         candidate_id=candidate_id or "UNKNOWN",
         score=0,
@@ -29,115 +34,121 @@ def _low_confidence(candidate_id: str, message: str) -> RiskAssessment:
         reasons=[f"Low-confidence error: {message}"],
     )
 
-
-def _clean_text(text: str | None) -> str:
-    return (text or "").strip()
-
-
-def _text_similarity(left: str, right: str) -> float:
-    left_text = _clean_text(left)
-    right_text = _clean_text(right)
-    if not left_text or not right_text:
-        return 0.0
-    try:
-        vectorizer = TfidfVectorizer(ngram_range=(1, 2), stop_words="english")
-        matrix = vectorizer.fit_transform([left_text, right_text])
-        return float(cosine_similarity(matrix[0], matrix[1])[0, 0])
-    except ValueError:
-        return 0.0
-
-
-def _skill_coverage(claimed_skills: list[str], answer_text: str) -> float:
-    if not claimed_skills:
-        return 0.0
-    lowered_answer = answer_text.lower()
-    hits = 0
-    for skill in claimed_skills:
-        normalized_skill = skill.lower().strip()
-        if normalized_skill and normalized_skill in lowered_answer:
-            hits += 1
-    return hits / len(claimed_skills)
-
-
-def _has_generic_phrase(text: str) -> bool:
-    lowered = text.lower()
-    return any(re.search(pattern, lowered) for pattern in _GENERIC_PATTERNS)
-
-
 def score_candidate(profile: CandidateProfile, response: InterviewResponse) -> RiskAssessment:
-    candidate_id = _clean_text(profile.candidate_id) or "UNKNOWN"
-    candidate_name = _clean_text(profile.name)
-    resume_text = _clean_text(profile.resume_text)
-    answer_text = _clean_text(response.answer_text)
+    """
+    Evaluates a candidate's interview response against their profile to calculate an impersonation risk score.
+    """
+    # 1. Validation and Sanitization
+    candidate_id = clean_text(profile.candidate_id) or "UNKNOWN"
+    candidate_name = clean_text(profile.name)
+    resume_text = clean_text(profile.resume_text)
+    answer_text = clean_text(response.answer_text)
     claimed_skills = [skill.strip() for skill in profile.claimed_skills if skill and skill.strip()]
 
-    if len(candidate_name) == 0:
+    if not candidate_name:
         return _low_confidence(candidate_id, "missing candidate name")
     if not claimed_skills:
         return _low_confidence(candidate_id, "missing claimed skills")
-    if len(resume_text) == 0:
+    if not resume_text:
         return _low_confidence(candidate_id, "missing resume text")
-    if len(answer_text) == 0:
+    if not answer_text:
         return _low_confidence(candidate_id, "missing answer text")
-    if len(resume_text) > MAX_INPUT_LENGTH or len(answer_text) > MAX_INPUT_LENGTH:
-        return _low_confidence(candidate_id, f"input exceeded {MAX_INPUT_LENGTH} characters")
+    if len(resume_text) > config.MAX_INPUT_LENGTH or len(answer_text) > config.MAX_INPUT_LENGTH:
+        return _low_confidence(candidate_id, f"input exceeded {config.MAX_INPUT_LENGTH} characters")
 
+    logger.info(f"Scoring candidate: {candidate_name} ({candidate_id})")
+
+    # 2. NLP Feature Extraction
     claimed_text = " ".join(claimed_skills)
-    overall_similarity = _text_similarity(f"{resume_text} {claimed_text}", answer_text)
-    resume_similarity = _text_similarity(resume_text, answer_text)
-    skill_coverage = _skill_coverage(claimed_skills, answer_text)
+    overall_similarity = get_text_similarity(f"{resume_text} {claimed_text}", answer_text)
+    resume_similarity = get_text_similarity(resume_text, answer_text)
+    skill_pairs = get_skill_similarities(claimed_skills, answer_text)
+    skill_coverage = get_skill_coverage(claimed_skills, answer_text)
+    skill_strength = fmean(similarity for _, similarity in skill_pairs) if skill_pairs else 0.0
+    word_count = get_word_count(answer_text)
 
-    support = (overall_similarity * 0.30) + (resume_similarity * 0.20) + (skill_coverage * 0.50)
-    score = round((1.0 - support) * 55)
+    # 3. Base Support Calculation
+    # Support represents how much evidence we have that the candidate is authentic.
+    support = (
+        (overall_similarity * config.WEIGHT_OVERALL_SIMILARITY)
+        + (resume_similarity * config.WEIGHT_RESUME_SIMILARITY)
+        + (skill_strength * config.WEIGHT_SKILL_STRENGTH)
+        + (skill_coverage * config.WEIGHT_SKILL_COVERAGE)
+    )
+    
+    # Invert support to get base risk score
+    score = round((1.0 - support) * config.BASE_RISK_MULTIPLIER)
     reasons: list[str] = []
 
-    if overall_similarity < 0.08:
-        score += 8
-        reasons.append(f"Low TF-IDF overlap with the resume and skill summary ({overall_similarity:.0%})")
-    elif overall_similarity < 0.18:
-        score += 4
-        reasons.append(f"Moderate TF-IDF overlap with the resume and skill summary ({overall_similarity:.0%})")
+    # 4. Rule-Based Penalty and Bonus Application
+    
+    # NLP Similarity Checks
+    if overall_similarity < config.LOW_SIMILARITY_THRESHOLD:
+        score += config.PENALTY_LOW_SIMILARITY
+        reasons.append(f"Low TF-IDF overlap with profile ({overall_similarity:.0%})")
+    elif overall_similarity < config.MODERATE_SIMILARITY_THRESHOLD:
+        score += config.PENALTY_MODERATE_SIMILARITY
+        reasons.append(f"Moderate TF-IDF overlap with profile ({overall_similarity:.0%})")
 
-    if skill_coverage < 0.34:
-        score += 12
-        reasons.append("The answer does not meaningfully reference the claimed skills")
+    # Skill Specific Checks
+    if skill_pairs:
+        ranked_skills = sorted(skill_pairs, key=lambda item: item[1], reverse=True)
+        top_skill, top_similarity = ranked_skills[0]
+        reasons.append(f"Top claimed skill match: {top_skill} ({top_similarity:.0%})")
+        if len(ranked_skills) > 1:
+            runner_up_skill, runner_up_similarity = ranked_skills[1]
+            reasons.append(f"Runner-up skill match: {runner_up_skill} ({runner_up_similarity:.0%})")
 
-    if response.expected_skill and _text_similarity(response.expected_skill, answer_text) < 0.10:
-        score += 8
-        reasons.append(f"Expected skill '{response.expected_skill}' is not clearly supported in the answer")
+    if skill_coverage >= config.STRONG_ALIGNMENT_COVERAGE and overall_similarity >= config.STRONG_ALIGNMENT_SIMILARITY and word_count >= config.MIN_PROFESSIONAL_WORD_COUNT:
+        score -= config.BONUS_STRONG_ALIGNMENT
+        reasons.append("Strong resume and skill alignment with detailed answer")
+    elif skill_coverage < 0.34:
+        score += config.PENALTY_WEAK_COVERAGE
+        reasons.append("Answer does not meaningfully reference claimed skills")
 
-    word_count = len(re.findall(r"\b\w+\b", answer_text))
-    if word_count < 20:
-        score += 12
-        reasons.append("Answer depth is very short for an interview response")
+    if skill_strength < config.WEAK_SKILL_STRENGTH_THRESHOLD:
+        score += config.PENALTY_WEAK_STRENGTH
+        reasons.append("Skill-to-answer similarity is consistently weak")
 
-    if _has_generic_phrase(answer_text):
-        score += 30
-        reasons.append("Generic or canned assistant phrasing detected in the answer")
+    # Expected Competency Check
+    if response.expected_skill:
+        expected_sim = get_text_similarity(response.expected_skill, answer_text)
+        if expected_sim < config.LOW_SIMILARITY_THRESHOLD:
+            score += config.PENALTY_EXPECTED_SKILL_MISMATCH
+            reasons.append(f"Expected skill '{response.expected_skill}' not supported in answer")
 
-    flag_penalty = 0
-    for flag in response.observation_flags or []:
-        normalized_flag = flag.lower().strip()
-        if normalized_flag in _CRITICAL_FLAGS:
-            flag_penalty += 18
-            reasons.append(f"Critical manual observation note: {flag}")
-        elif normalized_flag in _WARNING_FLAGS:
-            flag_penalty += 8
-            reasons.append(f"Warning manual observation note: {flag}")
+    # Depth and AI Phrasing
+    if word_count < config.MIN_PROFESSIONAL_WORD_COUNT:
+        score += config.PENALTY_SHORT_ANSWER
+        reasons.append("Answer depth is insufficient for a professional response")
 
-    score += min(flag_penalty, 40)
+    if has_generic_ai_phrase(answer_text):
+        score += config.PENALTY_AI_PHRASE
+        reasons.append("Generic or canned AI assistant phrasing detected")
+
+    # Behavioral Observation Flags
+    flag_penalty, flag_reasons = evaluate_behavioral_flags(response.observation_flags or [])
+    score += min(flag_penalty, config.PENALTY_MAX_FLAGS)
+    reasons.extend(flag_reasons)
+
+    # Clean Profile Bonus
+    if skill_coverage >= config.STRONG_ALIGNMENT_COVERAGE and not response.observation_flags and not has_generic_ai_phrase(answer_text):
+        score -= config.BONUS_CLEAN_PROFILE
+
+    # 5. Final Normalization and Labeling
     score = max(0, min(score, 100))
 
-    if score >= 70:
+    if score >= config.THRESHOLD_HIGH_RISK:
         risk_label = "High"
-    elif score >= 30:
+    elif score >= config.THRESHOLD_MEDIUM_RISK:
         risk_label = "Medium"
     else:
         risk_label = "Low"
 
     if not reasons:
-        reasons.append("Text signals look broadly consistent with the claimed interview profile.")
+        reasons.append("Text signals look broadly consistent with the claimed profile.")
 
+    logger.info(f"Assessment complete. Score: {score}, Label: {risk_label}")
     return RiskAssessment(
         candidate_id=candidate_id,
         score=score,
@@ -145,5 +156,5 @@ def score_candidate(profile: CandidateProfile, response: InterviewResponse) -> R
         reasons=reasons,
     )
 
-
+# Alias for backward compatibility
 calculate_risk = score_candidate

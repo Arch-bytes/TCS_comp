@@ -31,6 +31,7 @@ body {
                 linear-gradient(160deg, var(--bg-a), var(--bg-b));
     color: var(--text);
     font-family: "Segoe UI", "Aptos", sans-serif;
+    color-scheme: dark;
 }
 
 .page-shell { min-height: 100vh; padding: 28px; }
@@ -77,6 +78,98 @@ body {
     margin-top: 10px;
 }
 .tiny { font-size: 12px; color: var(--muted); }
+
+.section-kicker {
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(165, 243, 252, 0.92);
+}
+
+.section-title {
+    font-size: 22px;
+    line-height: 1.15;
+    font-weight: 800;
+    color: var(--text);
+}
+
+.subtle-chip {
+    border-radius: 9999px;
+    padding: 4px 10px;
+    background: rgba(103, 232, 249, 0.1);
+    color: #c9fbff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.ml-card {
+    border: 1px solid rgba(103, 232, 249, 0.12);
+    background: linear-gradient(180deg, rgba(11, 19, 34, 0.95), rgba(8, 14, 25, 0.92));
+}
+
+.field-note {
+    margin-top: -6px;
+    margin-bottom: 8px;
+    font-size: 11px;
+    color: rgba(165, 180, 252, 0.92);
+}
+
+.q-field,
+.q-field__native,
+.q-field__input,
+.q-field__prefix,
+.q-field__suffix,
+.q-field__label,
+.q-field__messages,
+.q-field__bottom,
+.q-checkbox__label,
+.q-item__label,
+.q-item__section,
+.q-select__dropdown-icon,
+.q-icon {
+    color: var(--text) !important;
+}
+
+.q-field--outlined .q-field__control,
+.q-field--filled .q-field__control,
+.q-field--standout .q-field__control {
+    background: rgba(7, 12, 22, 0.55) !important;
+    border-color: rgba(148, 163, 184, 0.22) !important;
+}
+
+.q-field--outlined .q-field__control:before,
+.q-field--outlined .q-field__control:after {
+    border-color: rgba(103, 232, 249, 0.35) !important;
+}
+
+.q-field.q-field--focused .q-field__control {
+    border-color: rgba(103, 232, 249, 0.75) !important;
+}
+
+.q-field textarea,
+.q-field input {
+    color: var(--text) !important;
+    caret-color: var(--accent, #67e8f9) !important;
+}
+
+.q-field input::placeholder,
+.q-field textarea::placeholder {
+    color: rgba(236, 243, 255, 0.48) !important;
+    opacity: 1 !important;
+}
+
+.q-menu,
+.q-dialog__inner .q-card,
+.q-list {
+    background: rgba(8, 17, 31, 0.98) !important;
+    color: var(--text) !important;
+}
+
+.q-checkbox__bg {
+    color: rgba(236, 243, 255, 0.9) !important;
+}
 </style>
 """
 
@@ -183,9 +276,17 @@ def _render_result(assessment) -> None:
             elif "warning" in lower_reason or "short" in lower_reason or "low" in lower_reason:
                 tone = "text-amber-200"
                 icon_name = "warning"
-            elif "consistent" in lower_reason or "no suspicious" in lower_reason:
+            elif (
+                "consistent" in lower_reason
+                or "no suspicious" in lower_reason
+                or "strong" in lower_reason
+                or "top claimed skill match" in lower_reason
+            ):
                 tone = "text-emerald-200"
                 icon_name = "check_circle"
+            elif "runner-up skill match" in lower_reason:
+                tone = "text-cyan-200"
+                icon_name = "insights"
             with ui.row().classes("items-start gap-2 reason-row"):
                 ui.icon(icon_name, size="sm", color="white")
                 ui.label(reason).classes(f"text-sm {tone}")
@@ -237,52 +338,59 @@ with ui.column().classes("page-shell w-full gap-6"):
             ui.label("No network calls, no persistence, no real biometric data.").classes("tiny")
 
     with ui.row().classes("w-full gap-6 items-start"):
-        with ui.card().classes("panel w-full lg:w-[58%] p-5 gap-4"):
-            ui.label("Input").classes("text-xl font-semibold text-white")
-            ui.label("Load a synthetic case or enter your own transcript and manual observation notes.").classes("tiny")
+        with ui.card().classes("panel ml-card w-full lg:w-[58%] p-5 gap-4"):
+            ui.label("Model Inputs").classes("section-kicker")
+            ui.label("Feature set for the interview risk model").classes("section-title")
+            ui.label("Load a synthetic case or enter your own transcript and manually logged review notes.").classes("tiny")
+
+            with ui.row().classes("w-full items-center justify-between gap-3"):
+                ui.label("Demo flow").classes("subtle-chip")
+                ui.label("All fields are synthetic-only and capped at 3000 characters.").classes("tiny")
 
             candidate_select = ui.select(
                 {str(index): f"{sample['profile'].candidate_id} - {sample['profile'].name}" for index, sample in enumerate(CANDIDATES)},
                 value="0",
-                label="Demo case",
+                label="Synthetic case",
                 on_change=on_sample_change,
             ).props("outlined")
 
             with ui.row().classes("w-full gap-3"):
-                candidate_id_input = ui.input(label="Candidate ID", value="", placeholder="CAN-001").props(
+                candidate_id_input = ui.input(label="Synthetic ID", value="", placeholder="CAN-001").props(
                     f"outlined maxlength={MAX_INPUT_LENGTH}"
                 ).classes("w-full")
-                candidate_name_input = ui.input(label="Candidate name", value="", placeholder="Synthetic candidate").props(
+                candidate_name_input = ui.input(label="Persona label", value="", placeholder="Synthetic candidate").props(
                     f"outlined maxlength={MAX_INPUT_LENGTH}"
                 ).classes("w-full")
 
             claimed_skills_input = ui.input(
-                label="Claimed skills",
+                label="Claimed capability set",
                 value="",
                 placeholder="Python, FastAPI, PostgreSQL",
             ).props(f"outlined maxlength={MAX_INPUT_LENGTH}").classes("w-full")
+            ui.label("Comma-separated capabilities used as model features.").classes("field-note")
 
             resume_input = ui.textarea(
-                label="Resume text",
+                label="Profile / resume text",
                 value="",
-                placeholder="Paste the candidate's resume summary here.",
+                placeholder="Paste the candidate's profile summary here.",
             ).props(f"outlined autogrow maxlength={MAX_INPUT_LENGTH}").classes("w-full")
             resume_counter = ui.label("").classes("tiny self-end")
 
             question_input = ui.input(
-                label="Interview question",
+                label="Prompt context",
                 value="",
                 placeholder="How did you use Python in your last backend project?",
             ).props(f"outlined maxlength={MAX_INPUT_LENGTH}").classes("w-full")
+            ui.label("Optional context used only for the reviewer workflow.").classes("field-note")
 
             expected_skill_input = ui.input(
-                label="Expected skill",
+                label="Expected competency",
                 value="",
                 placeholder="Python",
             ).props(f"outlined maxlength={MAX_INPUT_LENGTH}").classes("w-full")
 
             answer_input = ui.textarea(
-                label="Candidate answer",
+                label="Transcript / answer text",
                 value="",
                 placeholder="Paste the interview transcript or response here.",
             ).props(f"outlined autogrow maxlength={MAX_INPUT_LENGTH}").classes("w-full")
@@ -291,7 +399,7 @@ with ui.column().classes("page-shell w-full gap-6"):
             with ui.column().classes("w-full gap-2"):
                 ui.label("Manual observation notes").classes("text-sm font-semibold text-white")
                 ui.label(
-                    "These are manually logged review notes only; they are not live video or biometric detection."
+                    "These are manually logged reviewer notes only; they are not live video or biometric detection."
                 ).classes("tiny")
                 flag_specs = [
                     ("lip_sync_error", "Lip-sync mismatch"),
@@ -300,6 +408,10 @@ with ui.column().classes("page-shell w-full gap-6"):
                     ("unnatural_blink", "Unusual blink pattern"),
                     ("background_swapped", "Background mismatch"),
                     ("head_movement_unnatural", "Unnatural head movement"),
+                    ("poor_eye_contact", "Poor eye contact"),
+                    ("reading_from_script", "Reading from script"),
+                    ("prompting_detected", "Prompting detected"),
+                    ("external_assistance", "External assistance"),
                 ]
                 for flag_name, label in flag_specs:
                     flag_checkboxes[flag_name] = ui.checkbox(
@@ -313,8 +425,9 @@ with ui.column().classes("page-shell w-full gap-6"):
             )
 
         with ui.column().classes("w-full lg:w-[42%] gap-6"):
-            with ui.card().classes("panel p-5 gap-4 items-center text-center"):
-                ui.label("Results").classes("text-xl font-semibold text-white self-start")
+            with ui.card().classes("panel ml-card p-5 gap-4 items-center text-center"):
+                ui.label("Inference Output").classes("section-kicker self-start")
+                ui.label("Risk score and explanation").classes("section-title self-start")
                 result_ring = ui.column().classes("score-ring score-good")
                 with result_ring:
                     score_value = ui.label("0").classes("text-5xl font-bold text-white")
@@ -328,13 +441,14 @@ with ui.column().classes("page-shell w-full gap-6"):
                     ui.badge("Synthetic data only", color="blue-3")
                     ui.badge("Advisory only", color="green-3")
 
-            with ui.card().classes("panel p-5 gap-3"):
-                ui.label("Why this score?").classes("text-lg font-semibold text-white")
+            with ui.card().classes("panel ml-card p-5 gap-3"):
+                ui.label("Why this score?").classes("section-kicker")
+                ui.label("Model evidence").classes("section-title")
                 ui.label("Reasons are explicit so a judge can see the signal, not a black box.").classes("tiny")
                 reason_panel = ui.column().classes("reason-list w-full")
 
-            with ui.card().classes("panel p-5"):
-                ui.label("Safety note").classes("text-lg font-semibold text-white")
+            with ui.card().classes("panel ml-card p-5"):
+                ui.label("Safety note").classes("section-kicker")
                 ui.label(
                     "This score supports interviewer review and does not make a hiring decision."
                 ).classes("text-sm text-cyan-100")

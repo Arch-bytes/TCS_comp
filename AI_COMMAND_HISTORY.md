@@ -44,3 +44,17 @@ an AI-generated code change that other agents will rely on. Do not overwrite.
 **Command / Prompt Used:** "Trim the existing 24-hour scope to a 1-hour NiceGUI prototype with local TF-IDF + cosine similarity scoring, max-length validation, explicit reasons, and advisory-only output."
 **Rationale (why):** Replaced the overbuilt dashboard with a smaller offline demo that directly matches the hackathon rubric: the scoring signal is local and deterministic, the UI is simpler, and the safety/disclaimer language is visible on the results screen.
 **Notes for other agents:** `calculate_risk` is now an alias for `score_candidate` so older call sites keep working. The new scoring code depends on `scikit-learn` and treats blank or oversized input as a low-confidence error result instead of fabricating a score.
+
+### 2026-07-15T15:30:00Z — Agent: assistant
+**Action:** fix
+**Files:** models.py, data/synthetic_candidates.py, AI_COMMAND_HISTORY.md
+**Command / Prompt Used:** "Restore the missing data/model modules so `python -m app.main` can import `data.synthetic_candidates` and the scoring contract again."
+**Rationale (why):** The runtime import failure came from missing source files rather than a bad import path. Restoring the shared dataclasses and the synthetic demo cases brings the app back to a runnable state.
+**Notes for other agents:** Keep the synthetic dataset small and offline-only. If you change the dataclass contract, update the scorer and UI together.
+
+### 2026-07-15T19:30:00Z — Agent: assistant (Professional Refactoring)
+**Action:** refactor / update / test
+**Files:** services/config.py, services/nlp_match.py, services/rules.py, services/scoring.py, data/synthetic_candidates.py, app/main.py, tests/*, README.md
+**Command / Prompt Used:** "Full Professional Refactoring based on Cyber Defense Problem Statement"
+**Rationale (why):** Transitioned the project from a hackathon script to a modular, production-ready prototype. Separated NLP engine from rule evaluation, externalized all constants to a config file, expanded the synthetic dataset with the requested Python/ML mismatch example, added UI support for eye-contact and prompting flags, and introduced a unit test suite for mathematical verification.
+**Notes for other agents:** The codebase is now highly modular. Scoring parameters (weights/thresholds) should be modified in `services/config.py` only. New behavioral flags can be added to the config and UI without touching the core scoring logic.
