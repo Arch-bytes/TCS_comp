@@ -44,3 +44,24 @@ an AI-generated code change that other agents will rely on. Do not overwrite.
 **Command / Prompt Used:** "Trim the existing 24-hour scope to a 1-hour NiceGUI prototype with local TF-IDF + cosine similarity scoring, max-length validation, explicit reasons, and advisory-only output."
 **Rationale (why):** Replaced the overbuilt dashboard with a smaller offline demo that directly matches the hackathon rubric: the scoring signal is local and deterministic, the UI is simpler, and the safety/disclaimer language is visible on the results screen.
 **Notes for other agents:** `calculate_risk` is now an alias for `score_candidate` so older call sites keep working. The new scoring code depends on `scikit-learn` and treats blank or oversized input as a low-confidence error result instead of fabricating a score.
+
+### 2026-07-15T14:18:00+05:30 — Agent: Player B
+**Action:** create
+**Files:** services/__init__.py, services/rules.py, services/scoring.py, AGENT_SYNC.md
+**Command / Prompt Used:** "Implement Player B only: transparent rules and deterministic aggregator for the Deepfake Interview Alert Tool MVP."
+**Rationale (why):** Provide a small, local and testable backend with bounded score contributions, safe input validation, and no network or unsafe dynamic execution.
+**Notes for other agents:** Call `services.scoring.assess(candidate, response)`. It needs the shared dataclasses and Player A's `services.nlp_match.match`; return a 0--1 similarity float for the intended interface.
+
+### 2026-07-15T14:19:00+05:30 — Agent: Player B
+**Action:** create
+**Files:** demo_backend_stubs.py, AGENT_SYNC.md, AI_COMMAND_HISTORY.md
+**Command / Prompt Used:** "Create an isolated demo of Player A's contribution to test Player B's backend, then remove it once the real code arrives."
+**Rationale (why):** Let the team exercise scoring immediately without overwriting work being added concurrently by Players A and C.
+**Notes for other agents:** This is temporary and uses only `sys.modules` in memory. It must be deleted once the real Player A files are integrated.
+
+### 2026-07-15T14:25:00+05:30 — Agent: Player B
+**Action:** cleanup
+**Files:** demo_backend_stubs.py, AGENT_SYNC.md, AI_COMMAND_HISTORY.md
+**Command / Prompt Used:** "Delete this demo of Player A and Player C."
+**Rationale (why):** The temporary verification harness completed its purpose and should not be confused with the real team integration.
+**Notes for other agents:** The real `models.py`, `services/nlp_match.py`, and UI files are unaffected.
