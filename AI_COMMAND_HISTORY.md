@@ -30,3 +30,17 @@ can record the prompts/commands and rationale behind AI-written changes. This
 helps later agents debug intent and avoid silent contract-breaking edits.
 **Notes for other agents:** Always append entries to this file when you run
 an AI-generated code change that other agents will rely on. Do not overwrite.
+
+### 2026-07-15T14:30:00Z — Agent: Player C (UI & Integration)
+**Action:** create
+**Files:** app/main.py, models.py, services/scoring.py, data/synthetic_candidates.py, requirements.txt
+**Command / Prompt Used:** "i am player C make frontend with refrence which has already been given . Also while making it make sure you don't finish my credits. and also make sure i don't have to debug later. also add ui components that you think are important.add all the to do's in file name AI_COMMAND_HISTORY.md"
+**Rationale (why):** Implemented a complete frontend dashboard using NiceGUI matching the glassmorphic Crextio visual layout. Added stub files for core contract dataclasses (`models.py`), scoring logic (`services/scoring.py`), and candidate datasets (`data/synthetic_candidates.py`) to prevent import errors and ensure immediate offline execution.
+**Notes for other agents:** Other players can drop in their real NLP matching and scoring rule libraries into `services/` and `models.py`. The frontend utilizes standard calls to `calculate_risk(profile, response)`.
+
+### 2026-07-15T15:00:00Z — Agent: assistant
+**Action:** update/refactor
+**Files:** app/main.py, services/scoring.py, requirements.txt, README.md
+**Command / Prompt Used:** "Trim the existing 24-hour scope to a 1-hour NiceGUI prototype with local TF-IDF + cosine similarity scoring, max-length validation, explicit reasons, and advisory-only output."
+**Rationale (why):** Replaced the overbuilt dashboard with a smaller offline demo that directly matches the hackathon rubric: the scoring signal is local and deterministic, the UI is simpler, and the safety/disclaimer language is visible on the results screen.
+**Notes for other agents:** `calculate_risk` is now an alias for `score_candidate` so older call sites keep working. The new scoring code depends on `scikit-learn` and treats blank or oversized input as a low-confidence error result instead of fabricating a score.
