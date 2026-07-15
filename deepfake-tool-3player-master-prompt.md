@@ -1,36 +1,33 @@
-# MASTER PROMPT — Deepfake Interview Alert Tool (3-Player Speedrun Build)
+# MASTER PROMPT — Deepfake Interview Alert Tool (1‑Hour Hackathon, 3 Players)
 
-Paste this **entire file** into each of the 3 players' OpenCode agents. It is
-the same master prompt for all three — the only difference per player is the
-`## Your Role` section they act on. All three agents work in the **same repo**,
-in parallel, and stay in sync through `AGENT_SYNC.md` (protocol below).
+Paste this entire file into each player's agent. All agents use the same
+master prompt; only `## Your Role` differs per player. Timebox: 60 minutes.
 
----
+Goal: ship a minimal, runnable demo that accepts synthetic candidate data,
+computes a `RiskAssessment` (score 0–100, label Low/Medium/High, 2–3 reasons),
+and shows results in the UI with a clear disclaimer. Prioritize correctness,
+security, and a stable, documented interface other agents can wire to.
 
-## Project
+High-level constraints
+- Timeboxed: implement only the MVP features listed below.
+- Synthetic data only. No real audio/biometric/video/PII.
+- No network/API calls from the scoring pipeline. All ML is local TF‑IDF.
+- Security-first: validate/trim inputs, no `eval`/`exec`/`pickle.loads`.
 
-**Deepfake Interview Alert Tool** — TCS Tech Day @ Vidyavardhini College of
-Engineering (Theme: AI • Cyber Defense). A prototype that compares a
-candidate's claimed skills (resume/profile) against interview answer quality
-and manually-logged observation notes, and produces an **impersonation risk
-score** to support — never replace — interviewer judgment.
+MVP (60 minute) priorities — in order
+1. `models.py` dataclasses and a single small synthetic dataset (6–8 entries).
+2. `services/nlp_match.py` — TF‑IDF similarity signal (claimed skills/resume vs answer).
+3. `services/rules.py` — 2–3 simple rules (length depth, canned phrase detection,
+   observation flag penalty).
+4. `services/scoring.py` — deterministic aggregator producing `RiskAssessment`.
+5. `app/main.py` — minimal NiceGUI UI that takes inputs, calls `scoring.py`, and
+   displays `score`, `risk_label`, `reasons`, and the disclaimer.
 
-**Stack (fixed):** Python 3.11.9 · NiceGUI (frontend) · plain Python
-lists/dicts as the in-memory data store (no DB/ORM) · `scikit-learn`
-TF-IDF + cosine similarity for the NLP signal (offline, no API keys, no
-network calls) · synthetic data only, zero real biometric/audio/video data.
+If time remains: add 1–2 demo flows and small UI polish (badges, reason bullets).
 
-**Hard rule for every player, every file:** the tool outputs a `score (0-100)`,
-a `risk_label (Low/Medium/High)`, and `2-3 reasons`. It **never** outputs a
-hire/reject verdict, and every result surface (UI, logs, docs) must carry:
-*"This score supports interviewer review and does not make a hiring decision."*
-
----
-
-## Shared Contract (do not deviate without logging it — see sync protocol)
-
-Whoever's agent runs first creates `models.py` with these dataclasses. Every
-other player builds against this exact shape:
+Shared contract (must be followed)
+- `models.py` must define these dataclasses. Do not change fields without
+  appending a blocker entry to `AGENT_SYNC.md` and getting agreement.
 
 ```python
 @dataclass
@@ -46,154 +43,73 @@ class InterviewResponse:
     question: str
     expected_skill: str
     answer_text: str
-    observation_flags: list[str]  # e.g. ["prompting_suspected", "low_eye_contact"]
-    # NOTE: observation_flags are MANUALLY entered/simulated — never derived
-    # from real audio/video/biometric analysis in this prototype.
+    observation_flags: list[str]
 
 @dataclass
 class RiskAssessment:
     candidate_id: str
-    score: int              # 0-100
-    risk_label: str         # "Low" | "Medium" | "High"
-    reasons: list[str]      # 2-3 short human-readable reasons
+    score: int
+    risk_label: str
+    reasons: list[str]
     disclaimer: str = "This score supports interviewer review and does not make a hiring decision."
 ```
 
----
+Sync and history files (required)
+- `AGENT_SYNC.md`: continue using the existing append-only sync log protocol.
+- `AI_COMMAND_HISTORY.md` (new): a short, append-only file where agents record
+  the *commands, prompts, and rationale* that produced or changed code. Use
+  `AI_COMMAND_HISTORY.md` to help future AI agents understand *why* code was
+  added/changed by an agent.
 
-## Inter-Agent Sync Protocol — `AGENT_SYNC.md`
+Before changing any shared interface (dataclass fields, function signatures):
+1. Read `AGENT_SYNC.md` and `AI_COMMAND_HISTORY.md`.
+2. If your change affects others, add a blocker entry in `AGENT_SYNC.md` and
+   a rationale entry in `AI_COMMAND_HISTORY.md` explaining why the change is
+   necessary and how to adapt.
 
-This is how three separate AI agents, working in parallel with no direct
-communication, stay aware of each other's progress. **This is not optional.**
-
-**Before touching any file**, your agent must:
-1. Open and read `AGENT_SYNC.md` in full (create it if it doesn't exist yet,
-   using the template below).
-2. Note which files/interfaces other players have already created — build
-   against what exists rather than re-defining it.
-
-**After every meaningful unit of work** (a new function, a finished module, a
-bugfix that changes an interface), your agent must **append** (never overwrite
-or delete prior entries) a new entry to `AGENT_SYNC.md`:
+`AGENT_SYNC.md` append template (same as before):
 
 ```markdown
-### [HH:MM] Player <A/B/C> — <role name>
-**Files touched:** path/to/file.py, path/to/other.py
-**What changed:** one or two sentences, plain language
-**New interface available for others:** function/class signature + one-line
-usage example, if this is something the other two agents will call
-**Open questions / blockers:** anything another player needs to resolve, or
-"none"
+### [HH:MM] Player <A/B/C> — <role>
+**Files touched:** path/to/file.py
+**What changed:** short plain-language description
+**New interface:** function/class signature + example (if relevant)
+**Open questions / blockers:** none / explanation
 ```
 
-**Template to create `AGENT_SYNC.md` with, if it doesn't exist:**
+`AI_COMMAND_HISTORY.md` append template (new):
 
 ```markdown
-# Agent Sync Log
-Shared context file. Every agent reads this before working and appends an
-entry after each unit of work. Never edit or delete another agent's entry —
-only append.
-
----
+### [ISO timestamp] — Agent: <player or tool>
+**Action:** create/update / refactor / fix
+**Files:** path/to/file(s)
+**Command / Prompt Used:** short copy of the command or prompt the agent ran
+**Rationale (why):** short explanation of why the change was made
+**Notes for other agents:** how to adapt, expected inputs/outputs, backward-compat notes
 ```
 
-If your agent is about to build something that conflicts with an existing
-logged entry (e.g., changing a dataclass field another player already
-depends on), it must **stop and flag it in the sync log as a blocker**
-instead of silently changing the shared contract.
+Security and demo rules (quick)
+- Enforce max-length on text fields (e.g., 5000 chars) and sanitize before UI render.
+- Fail closed: return a labeled low-confidence result if inputs are invalid.
+- No secrets, no network calls, synthetic-only.
 
----
+Roles (60-minute scope)
+Player A — Data & NLP (tiny scope)
+- Create `models.py` and `data/synthetic_candidates.py` with 6 sample pairs.
+- Implement `services/nlp_match.py` with TF‑IDF and a simple call `match(candidate, response)`.
+Player B — Rules & Scoring (tiny scope)
+- Implement `services/rules.py` with 2 rules and `services/scoring.py` that
+  consumes `nlp_match` output and returns `RiskAssessment`.
+Player C — UI & Integration (tiny scope)
+- Implement `app/main.py` NiceGUI form that calls `scoring.py` and displays results.
 
-## Security Constraints (apply regardless of role)
+Quick run (dev machine, Python 3.11+)
+1. Create a virtualenv and install requirements: `pip install -r requirements.txt`
+2. From project root: `python -m app.main`
+3. Open the NiceGUI URL printed by the server and run the demo flows.
 
-**Backend / logic layer:**
-- Never use `eval`, `exec`, `pickle.loads` on any user-supplied text.
-- Treat all resume/answer/observation text as untrusted input: validate
-  type and enforce a max length (e.g. 5,000 chars) before processing;
-  reject/trim silently-truncate rather than crash on oversized input.
-- No real PII/biometric fields anywhere in the data model — synthetic data
-  only, and reject any field that looks like an email, phone number, or ID
-  number pattern in demo data with a lint/check, not just a convention.
-- No network calls from the scoring pipeline (TF-IDF is local/offline) —
-  if a player later wants a hosted embedding API, that requires explicit
-  confirmation from the team, not a silent addition.
-- No hardcoded secrets/API keys anywhere in code, fixtures, or docs, even
-  placeholder-looking ones.
-- Fail closed: if scoring inputs are malformed, return a clearly-labeled
-  error/low-confidence result — never a fabricated score.
+Response style
+- Make focused changes, append to both `AGENT_SYNC.md` and `AI_COMMAND_HISTORY.md`.
+- If you change a contract, show before/after examples and explain impact.
 
-**Frontend (NiceGUI):**
-- Escape/sanitize all user-entered text before rendering it back (resume
-  text, answers, notes) — never render untrusted text as raw HTML.
-- Enforce input length limits in the UI layer too, not just the backend
-  (defense in depth).
-- No arbitrary file upload/execution — if resume upload is added, restrict
-  to plain text/PDF text-extraction only, no execution of uploaded content.
-- The "advisory only, not a hiring decision" disclaimer must be visually
-  present on every results view, not just in code comments.
-- No client-side storage of candidate data beyond the current session.
-
----
-
-## Division of Work — 3 Players
-
-### Player A — Data + NLP/ML Engineer
-**Owns:** `data/synthetic_candidates.py`, `services/nlp_match.py`
-
-- Build 8–10 synthetic `CandidateProfile` + `InterviewResponse` records
-  covering: clean match, clear skill-mismatch (e.g. claims ML, can't explain
-  training steps), borderline case, suspicious-observation-flags case.
-- Implement `nlp_match.py`: TF-IDF vectorize `claimed_skills` + `resume_text`
-  against `answer_text`; return a per-skill cosine similarity score and an
-  overall similarity signal (0–1 float), with reasoning strings like
-  `"Low similarity between claimed skill 'Machine Learning' and answer content"`.
-- Apply the backend input-validation security constraints (length limits,
-  no eval/exec, no PII fields) to your own data generation and matching code.
-- Log your dataclass usage and function signatures in `AGENT_SYNC.md` as
-  soon as `nlp_match.py`'s main function is callable — Player B needs it.
-
-### Player B — Rules + Scoring Aggregation + Backend Security Engineer
-**Owns:** `services/rules.py`, `services/scoring.py`, security hardening for the backend
-
-- Implement `rules.py`: canned/generic-phrase detection, answer length vs.
-  expected depth per question, observation-flag penalty rules (e.g.
-  `"prompting_suspected"` → risk bump), reason-string generation.
-- Implement `scoring.py`: combine Player A's similarity signal + your rule
-  signals into one weighted `RiskAssessment` (0–100 score, Low/Medium/High
-  label via documented thresholds, 2–3 reasons). Pure, idempotent function —
-  same input always gives same output.
-- Own and enforce the backend security constraints above across the whole
-  pipeline (input validation, no network calls, fail-closed behavior).
-- Log the final `scoring.py` entrypoint signature in `AGENT_SYNC.md` —
-  Player C wires the UI directly to it.
-
-### Player C — Frontend (NiceGUI) + Integration + Frontend Security Engineer
-**Owns:** `app/main.py`, NiceGUI pages, wiring to `scoring.py`
-
-- Build the input screen: candidate profile fields, interview answer text
-  areas, transcript/observation notes with manual flag toggles.
-- Build the results screen: score, risk-label badge, reasons list,
-  disclaimer banner — pulling live from Player B's `scoring.py`, not mocked
-  data, once it's available (check `AGENT_SYNC.md` for the entrypoint).
-- Apply all frontend security constraints (escaping, input limits, no raw
-  HTML render of untrusted text, disclaimer always visible).
-- Prepare the demo flow: clean-match candidate → low risk; planted mismatch
-  candidate → high risk with visible reasons.
-- Log every UI/integration milestone in `AGENT_SYNC.md` so Players A and B
-  know when their modules have been successfully wired in and can adjust
-  interfaces if the UI needs a different shape.
-
----
-
-## Response Style for all 3 agents
-
-- Small, local changes (styling, a fixture tweak): make the change, brief
-  explanation, no ceremony.
-- Anything touching the shared `models.py` contract or scoring thresholds:
-  explain the reasoning, show before/after example output, and log it in
-  `AGENT_SYNC.md` before considering it done.
-- Never commit/push/create branches without explicit confirmation from your
-  player.
-- Never skip the `AGENT_SYNC.md` read-before/append-after step, even for
-  small changes — that log is the only thing keeping three parallel agents
-  coordinated.
+Good luck — keep it small, secure, and demonstrable within 60 minutes.
